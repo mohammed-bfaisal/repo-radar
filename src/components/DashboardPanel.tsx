@@ -7,6 +7,12 @@ import { IssuesChart } from './dashboard/IssuesChart'
 import { CommitHeatmap } from './dashboard/CommitHeatmap'
 import { FileStructureChart } from './dashboard/FileStructureChart'
 import { ReleaseTimeline } from './dashboard/ReleaseTimeline'
+import { HealthScores } from './dashboard/HealthScores'
+import { SecurityFindings } from './dashboard/SecurityFindings'
+import { ComplexityMetrics } from './dashboard/ComplexityMetrics'
+import { SmellsInventory } from './dashboard/SmellsInventory'
+import { BestPracticesCheck } from './dashboard/BestPracticesCheck'
+import { AdvancedInsights } from './dashboard/AdvancedInsights'
 
 // Central data normalizer + layout assembler for all chart components.
 // Each chart receives pre-shaped props so individual components stay mode-agnostic.
@@ -80,11 +86,28 @@ export function DashboardPanel({ data }: Props) {
   const fileStructure = extractFileStructure(data)
   const releases      = extractReleases(data)
   const isGithub      = data.mode === 'github'
+  const analysis      = data.analysis
 
   return (
     <div className="dashboard">
       {/* Row 1: KPI stat cards */}
       <StatCards data={data} />
+
+      {/* Analysis section — rendered when static analysis results are present */}
+      {analysis && (
+        <>
+          <HealthScores analysis={analysis} />
+          <div className="dash-row dash-row-1-1">
+            <SecurityFindings findings={analysis.security} />
+            <ComplexityMetrics complexity={analysis.complexity} />
+          </div>
+          <SmellsInventory smells={analysis.smells} />
+          <div className="dash-row dash-row-1-1">
+            <BestPracticesCheck bestPractices={analysis.bestPractices} />
+            <AdvancedInsights advanced={analysis.advanced} />
+          </div>
+        </>
+      )}
 
       {/* Row 2: commit frequency (wide) + language donut */}
       <div className="dash-row dash-row-2-1">

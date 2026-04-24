@@ -370,11 +370,19 @@ app.post('/api/analyze', async (req, res) => {
         messages: [
           {
             role: 'system',
-            content: `You are a senior software architect and engineering intelligence system. 
-You analyze codebases deeply and produce comprehensive, insightful reports. 
+            content: `You are a senior software architect, security engineer, and engineering intelligence system.
+You analyze codebases deeply and produce comprehensive, insightful reports.
 Your analysis is technical, opinionated, honest, and genuinely useful — not generic.
-You surface non-obvious insights: patterns, anti-patterns, evolution trends, risk areas, architectural decisions.
-Format your report in clean Markdown with clear sections.`
+
+You work in two phases:
+PHASE 1 — You will be given structured findings from a static analysis pre-pass (security vulnerabilities, complexity metrics, code smells, best-practice violations, scale risks, compliance signals). These are machine-detected; your job is to reason about them, explain their real-world impact, identify patterns across findings, and prioritise what actually matters.
+PHASE 2 — You then extend the analysis with insights the static pass cannot see: architectural decisions, team patterns, evolution story, non-obvious risks, and concrete recommendations.
+
+Rules:
+- Every finding you cite must reference a specific file, pattern, or commit — no generic statements.
+- Be honest and opinionated. If the security posture is poor, say so clearly.
+- Surface the 2–3 most critical issues prominently, not buried in a list.
+- Format your report in clean Markdown with clear section headers.`
           },
           { role: 'user', content: prompt }
         ]
@@ -422,8 +430,66 @@ Format your report in clean Markdown with clear sections.`
 
 // ── PROMPT BUILDERS ───────────────────────────────────────────────────────────
 
+function buildAnalysisBlock(analysis: any): string {
+  if (!analysis) return ''
+  const { security, complexity, smells, bestPractices, advanced, scores } = analysis
+
+  const fmtFindings = (arr: any[]) => arr.slice(0, 12)
+    .map((f: any) => `  [${f.severity?.toUpperCase()}] ${f.file}${f.line ? `:${f.line}` : ''} — ${f.message}`)
+    .join('\n') || '  (none detected)'
+
+  return `
+## ═══ STATIC ANALYSIS PRE-PASS FINDINGS ═══
+These findings were produced by a deterministic scanner before you read this prompt.
+Reason about each category, explain real-world impact, and identify cross-cutting patterns.
+
+### Health Scores
+- Security:  ${scores.security.grade}  (${scores.security.score}/100)
+- Code Health: ${scores.health.grade}  (${scores.health.score}/100)
+- Best Practices: ${scores.practices.grade}  (${scores.practices.score}/100)
+- Overall: ${scores.overall.grade}  (${scores.overall.score}/100)
+
+### Detected Stack
+${bestPractices.detectedStack?.join(', ') || '(not detected)'}
+
+### Security Findings (${security.length} total)
+${fmtFindings(security)}
+
+### Complexity Issues
+God files (>500 lines): ${complexity.godFiles?.map((f: any) => `${f.path} (${f.lines} lines)`).join(', ') || 'none'}
+Deep nesting: ${complexity.deepNestingFiles?.map((f: any) => `${f.path} (depth ${f.maxDepth})`).join(', ') || 'none'}
+High complexity: ${complexity.highComplexityFiles?.map((f: any) => `${f.path} (score ${f.score})`).join(', ') || 'none'}
+Debug statements in production: ${complexity.debugStatements?.length || 0}
+
+### Code Smells
+Empty catches: ${smells.emptyCatches?.length || 0}
+Generic exceptions: ${smells.genericExceptions?.length || 0}
+Unhandled promises: ${smells.unhandledPromises?.length || 0}
+Magic numbers: ${smells.magicNumbers?.length || 0}
+Commented-out code blocks: ${smells.commentedCode?.length || 0}
+Duplicate blocks detected: ${smells.duplicateBlocks?.length || 0}
+
+### Best Practice Violations (${bestPractices.violations?.length || 0} total)
+${fmtFindings(bestPractices.violations || [])}
+
+### Scale Risks (${advanced.scaleRisks?.length || 0} total)
+${fmtFindings(advanced.scaleRisks || [])}
+
+### Compliance Signals (${advanced.complianceSignals?.length || 0} total)
+${fmtFindings(advanced.complianceSignals || [])}
+
+### Naming / Intent Gaps
+${fmtFindings(advanced.namingIntentGaps || [])}
+
+### Abandoned / Dead Code
+${fmtFindings(advanced.abandonedCode || [])}
+
+## ═══ END OF STATIC ANALYSIS — BEGIN YOUR REASONING ═══
+`
+}
+
 function buildGithubPrompt(data: any): string {
-  const { meta, languages, contributors, commits, branches, releases, issues, tree, readme, ciRuns } = data
+  const { meta, languages, contributors, commits, branches, releases, issues, tree, readme, ciRuns, analysis } = data
 
   const commitSample = commits.slice(0, 100).map((c: any) =>
     `[${c.commit?.author?.date?.slice(0, 10)}] ${c.commit?.author?.name}: ${c.commit?.message?.split('\n')[0]}`
@@ -440,7 +506,7 @@ function buildGithubPrompt(data: any): string {
   ).join(', ')
 
   return `Analyze this GitHub repository and produce a comprehensive intelligence report.
-
+${buildAnalysisBlock(analysis)}
 ## Repository: ${meta.full_name}
 
 **Basic Info:**
@@ -520,7 +586,7 @@ Be specific, technical, and opinionated. Avoid generic statements that could app
 }
 
 function buildLocalPrompt(data: any): string {
-  const { folderName, folderPath, totalFiles, fileContents, langMap, dirStructure, gitLog, gitBranches, gitAuthorStats } = data
+  const { folderName, folderPath, totalFiles, fileContents, langMap, dirStructure, gitLog, gitBranches, gitAuthorStats, analysis } = data
 
   const fileTree = Object.entries(dirStructure)
     .sort(([, a], [, b]) => (b as number) - (a as number))
@@ -554,7 +620,7 @@ function buildLocalPrompt(data: any): string {
   }
 
   return `Analyze this local codebase and produce a comprehensive intelligence report.
-
+${buildAnalysisBlock(analysis)}
 ## Project: ${folderName}
 **Path:** ${folderPath}
 **Total files:** ${totalFiles} (${fileContents.length} read for analysis)

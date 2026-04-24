@@ -149,6 +149,12 @@ app.get('/api/github/scan', async (req, res) => {
       ciRuns = ciRes.workflow_runs || []
     } catch { /* no actions */ }
 
+    send('progress', { step: 'Fetching source files for analysis...' })
+    const fileContents = await fetchGithubFileContents(base, tree).catch(() => [])
+
+    send('progress', { step: 'Running static analysis...' })
+    const analysis = runAnalysis(fileContents)
+
     const payload = {
       meta: repoMeta,
       languages,
@@ -160,6 +166,8 @@ app.get('/api/github/scan', async (req, res) => {
       tree: tree.slice(0, 1000),
       readme,
       ciRuns: ciRuns.slice(0, 20),
+      fileContents,
+      analysis,
       mode: 'github' as const
     }
 
@@ -309,6 +317,10 @@ app.post('/api/local/scan', async (req, res) => {
       dirStructure[topDir] = (dirStructure[topDir] || 0) + 1
     }
 
+    send('progress', { step: 'Running static analysis...' })
+    const analysisFiles: FileContent[] = fileContents.map(f => ({ path: f.path, content: f.content }))
+    const analysis = runAnalysis(analysisFiles)
+
     const payload = {
       folderPath: absPath,
       folderName: path.basename(absPath),
@@ -321,6 +333,7 @@ app.post('/api/local/scan', async (req, res) => {
       gitBranches,
       gitRemote,
       gitAuthorStats: gitStats,
+      analysis,
       mode: 'local' as const
     }
 

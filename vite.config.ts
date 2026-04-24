@@ -11,5 +11,14 @@ export default defineConfig({
         changeOrigin: true,
       }
     }
+  },
+  build: {
+    // recharts is ~534KB minified — raise the limit rather than fighting the library
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: { recharts: ['recharts'] }
+      }
+    }
   }
 })

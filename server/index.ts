@@ -6,6 +6,8 @@ import path from 'path'
 import fs from 'fs'
 import { simpleGit } from 'simple-git'
 import ignore from 'ignore'
+import { runAnalysis } from './analysis/index'
+import type { FileContent } from './analysis/index'
 
 dotenv.config()
 
@@ -42,6 +44,39 @@ async function ghGetPaged(url: string, maxPages = 5) {
     results.push(...res.data)
     if (res.data.length < 100) break
     page++
+  }
+  return results
+}
+
+// ── GitHub file content fetching ─────────────────────────────────────────────
+// Fetches up to 25 key source files for analysis. Prioritises entry points,
+// config files, and the largest blobs in the tree.
+
+const ENTRY_POINTS = ['index.ts','index.js','main.ts','main.js','app.ts','app.py','main.py','server.ts','server.js','main.go','main.rs']
+const CONFIG_FILES = ['package.json','tsconfig.json','.eslintrc.json','.eslintrc.js','pyproject.toml','Cargo.toml','go.mod','composer.json']
+const SKIP_FETCH   = /\.(png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|mp4|pdf|zip|lock|sum)$/i
+
+async function fetchGithubFileContents(base: string, tree: any[]): Promise<FileContent[]> {
+  const blobs = tree.filter(t => t.type === 'blob' && !SKIP_FETCH.test(t.path))
+  const scored = blobs.map(b => {
+    const name  = path.basename(b.path)
+    const entry = ENTRY_POINTS.includes(name) ? 100 : 0
+    const cfg   = CONFIG_FILES.includes(name)  ? 80  : 0
+    const size  = Math.min(b.size || 0, 50000)
+    return { ...b, priority: entry + cfg + size }
+  })
+  scored.sort((a, b) => b.priority - a.priority)
+  const toFetch = scored.slice(0, 25)
+
+  const results: FileContent[] = []
+  for (const blob of toFetch) {
+    try {
+      const res = await axios.get(`${base}/contents/${encodeURIComponent(blob.path)}`, { headers: githubHeaders() })
+      if (res.data.encoding === 'base64' && res.data.content) {
+        const content = Buffer.from(res.data.content, 'base64').toString('utf8').slice(0, 50000)
+        results.push({ path: blob.path, content })
+      }
+    } catch { /* individual file fetch failure is non-fatal */ }
   }
   return results
 }

@@ -26,7 +26,7 @@ function scoreFromFindings(findings: Finding[], maxDeduction = 100): HealthScore
   return { score, grade: gradeFromScore(score) }
 }
 
-export function calculateScores(report: Omit<AnalysisReport, 'scores'>): ScoreReport {
+export function calculateScores(report: Pick<AnalysisReport, 'security' | 'smells' | 'complexity' | 'bestPractices' | 'advanced'>): ScoreReport {
   const security = scoreFromFindings(report.security)
 
   const healthFindings: Finding[] = [
